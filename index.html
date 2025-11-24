@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invoice Generator — Simple &amp; Mobile First</title>
+  <!-- Tailwind Play CDN (tailwindcss + preflight) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Enable class-based dark mode for Tailwind
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <!-- External libraries for export features -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNa5wq0Q6qlbYxq1z2+8Sf7Jo9lC/4o+u6nYI9AXxB2y1Pp+3s3z1uG8bG1nG1yA2BvscbR0g8xOZz2k7u3K2w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha512-3UJH8w2d6W9w8m2+zQ/2g2Gz1K7wEJpP6s1k6e1qFj9Y7gq2k4mV7bq3Q3Kq6yQ1e4zv6h2KxZc1r1E2m3u2w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha512-3VJ7u9h2hQx1k9mQ2Qw1sL9f3pYx2Zy1k3m2p4qK2kY1u3r5h2h7w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    /* Small helper to force mobile-friendly font scaling */
+    html { -webkit-text-size-adjust: 100%; }
+    /* Print cleanup */
+    @media print {
+      body { background: white; color: black }
+      .no-print { display: none !important }
+      .invoice-card { box-shadow: none }
+    }
+  </style>
+</head>
+<body class="bg-gray-200 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex items-start justify-center p-4">
+  <div class="w-full max-w-3xl">
+    <header class="flex items-center justify-between mb-4 gap-3">
+      <h1 class="text-xl sm:text-2xl font-semibold">Invoice Generator</h1>
+      <div class="flex items-center gap-2">
+        <button id="themeToggle" class="no-print inline-flex items-center gap-2 px-3 py-2 bg-white/60 dark:bg-gray-800/60 rounded-lg shadow-sm text-sm">
+          🌙
+          <span class="hidden sm:inline">Toggle</span>
+        </button>
+        <div class="p-1 rounded-lg bg-white/60 dark:bg-gray-800/60">
+          <button id="saveBtn" class="no-print px-3 py-2 text-sm">Save</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="space-y-4">
+      <!-- Invoice preview card -->
+      <section class="invoice-card bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-md"> 
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div class="flex-1">
+            <label class="text-xs text-gray-500">From</label>
+            <input id="from" class="w-full mt-1 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm" placeholder="Your business / name" />
+
+            <label class="text-xs text-gray-500 mt-3">To</label>
+            <input id="to" class="w-full mt-1 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm" placeholder="Client name / company" />
+          </div>
+
+          <div class="w-full sm:w-56">
+            <label class="text-xs text-gray-500">Invoice #</label>
+            <input id="invoiceNo" class="w-full mt-1 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm" />
+
+            <div class="flex gap-2 mt-3">
+              <div class="flex-1">
+                <label class="text-xs text-gray-500">Date</label>
+                <input id="date" type="date" class="w-full mt-1 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm" />
+              </div>
+              <div class="w-24">
+                <label class="text-xs text-gray-500">Due</label>
+                <input id="dueDate" type="date" class="w-full mt-1 p-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items table -->
+        <div class="mt-4 overflow-x-auto">
+          <table id="itemsTable" class="w-full text-sm table-fixed">
+            <thead class="text-xs text-gray-500">
+              <tr>
+                <th class="w-6/12 text-left">Description</th>
+                <th class="w-2/12">Qty</th>
+                <th class="w-2/12">Price</th>
+                <th class="w-2/12">Total</th>
+                <th class="w-1/12 no-print"> </th>
+              </tr>
+            </thead>
+            <tbody id="itemsBody">
+              <!-- JS inject rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div class="flex gap-2">
+            <button id="addRow" class="no-print px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm">Add item</button>
+            <button id="clearAll" class="no-print px-3 py-2 rounded-lg bg-red-600 text-white text-sm">Clear</button>
+          </div>
+          <div class="text-right">
+            <div class="text-sm text-gray-500">Subtotal</div>
+            <div id="subtotal" class="text-xl font-semibold">₹0.00</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Actions -->
+      <section class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-md no-print">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div class="flex gap-2 flex-wrap">
+            <button id="exportCSV" class="px-3 py-2 rounded-lg bg-sky-600 text-white text-sm">Export CSV</button>
+          </div>
+
+          <div class="text-sm text-gray-500">
+            <span class="block">Autosaved to localStorage.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Saved invoices list -->
+      <section class="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-md">
+        <h2 class="text-sm font-medium mb-2">Saved invoices</h2>
+        <div id="savedList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // Simple Invoice App JS
+    const $ = (id) => document.getElementById(id);
+
+    // Elements
+    const itemsBody = $('itemsBody');
+    const addRowBtn = $('addRow');
+    const subtotalEl = $('subtotal');
+    const fromInput = $('from');
+    const toInput = $('to');
+    const invoiceNoInput = $('invoiceNo');
+    const dateInput = $('date');
+    const dueDateInput = $('dueDate');
+    const saveBtn = $('saveBtn');
+    const savedList = $('savedList');
+
+    // Export buttons
+    const exportPDF = $('exportPDF');
+    const exportPNG = $('exportPNG');
+    const exportCSV = $('exportCSV');
+    const exportXLSX = $('exportXLSX');
+
+    const STORAGE_KEY = 'simple_invoices_v1';
+
+    // Utils
+    function currency(n) {
+      const v = Number(n) || 0;
+      return v.toLocaleString(undefined, { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+    }
+
+    function createRow(item={desc:'',qty:1,price:0}){
+      const tr = document.createElement('tr');
+      tr.className = 'align-top';
+      tr.innerHTML = `
+        <td><input class="w-full p-2 rounded-lg bg-transparent text-sm" placeholder="Description" value="${escapeHtml(item.desc)}"></td>
+        <td><input class="w-full p-2 rounded-lg bg-transparent text-sm" type="number" min="0" value="${item.qty}"></td>
+        <td><input class="w-full p-2 rounded-lg bg-transparent text-sm" type="number" step="0.01" min="0" value="${item.price}"></td>
+        <td class="text-right p-2">${currency(item.qty * item.price)}</td>
+        <td class="text-right"><button class="remove text-red-500 text-sm">✕</button></td>
+      `;
+
+      // listeners
+      const inputs = tr.querySelectorAll('input');
+      inputs.forEach(inp => inp.addEventListener('input', updateTotals));
+      tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); updateTotals(); });
+
+      itemsBody.appendChild(tr);
+      return tr;
+    }
+
+    function updateTotals(){
+      const rows = Array.from(itemsBody.querySelectorAll('tr'));
+      let sub = 0;
+      rows.forEach(r => {
+        const qty = Number(r.querySelectorAll('input')[1].value) || 0;
+        const price = Number(r.querySelectorAll('input')[2].value) || 0;
+        r.querySelectorAll('td')[3].textContent = currency(qty * price);
+        sub += qty * price;
+      });
+      subtotalEl.textContent = currency(sub);
+      // autosave small snapshot
+      autosave();
+    }
+
+    function autosave(){
+      const data = getCurrentData();
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      // keep 'draft' as first slot
+      all[0] = { meta: { draft: true, updated: Date.now() }, payload:data };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      renderSavedList();
+    }
+
+    function getCurrentData(){
+      const rows = Array.from(itemsBody.querySelectorAll('tr'));
+      return {
+        from: fromInput.value,
+        to: toInput.value,
+        invoiceNo: invoiceNoInput.value,
+        date: dateInput.value,
+        dueDate: dueDateInput.value,
+        items: rows.map(r => ({ desc: r.querySelectorAll('input')[0].value, qty: Number(r.querySelectorAll('input')[1].value)||0, price: Number(r.querySelectorAll('input')[2].value)||0 })),
+        subtotal: subtotalEl.textContent
+      };
+    }
+
+    function loadData(data){
+      fromInput.value = data.from || '';
+      toInput.value = data.to || '';
+      invoiceNoInput.value = data.invoiceNo || '';
+      dateInput.value = data.date || '';
+      dueDateInput.value = data.dueDate || '';
+      itemsBody.innerHTML = '';
+      (data.items || []).forEach(it => createRow(it));
+      if((data.items||[]).length===0) createRow();
+      updateTotals();
+    }
+
+    function saveInvoice(){
+      const data = getCurrentData();
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      // remove draft slot if present
+      const cleaned = all.filter((_,i) => i!==0);
+      cleaned.unshift({ meta: { draft: false, updated: Date.now(), id: 'inv_'+Date.now() }, payload: data });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+      renderSavedList();
+      alert('Invoice saved locally');
+    }
+
+    function renderSavedList(){
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      savedList.innerHTML = '';
+      if(!all || all.length===0){ savedList.textContent = 'No saved invoices.'; return; }
+      all.forEach((slot, idx) => {
+        if(idx===0 && slot.meta && slot.meta.draft) return; // don't show raw draft
+        const card = document.createElement('div');
+        card.className = 'flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-700';
+        const left = document.createElement('div');
+        left.innerHTML = `<div class="font-medium">${slot.payload.invoiceNo || 'Invoice'}</div><div class="text-xs text-gray-500">${new Date(slot.meta.updated).toLocaleString()}</div>`;
+        const right = document.createElement('div');
+        right.className = 'flex gap-2';
+        const load = document.createElement('button'); load.className='px-2 py-1 rounded bg-indigo-600 text-white text-xs'; load.textContent='Load'; load.addEventListener('click', ()=>{ loadInvoice(slot); });
+        const del = document.createElement('button'); del.className='px-2 py-1 rounded bg-red-600 text-white text-xs'; del.textContent='Delete'; del.addEventListener('click', ()=>{ deleteInvoice(slot.meta.id); });
+        right.appendChild(load); right.appendChild(del);
+        card.appendChild(left); card.appendChild(right);
+        savedList.appendChild(card);
+      });
+    }
+
+    function loadInvoice(slot){
+      if(!slot) return;
+      loadData(slot.payload);
+      alert('Loaded invoice from saved list.');
+    }
+
+    function deleteInvoice(id){
+      let all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      all = all.filter(s => s.meta && s.meta.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+      renderSavedList();
+    }
+
+    // Export helpers
+    async function exportAsPNG(){
+      const node = document.querySelector('.invoice-card');
+      const canvas = await html2canvas(node, { scale: 2 });
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl; a.download = (invoiceNoInput.value || 'invoice') + '.png';
+      a.click();
+    }
+
+    async function exportAsPDF(){
+      const node = document.querySelector('.invoice-card');
+      const canvas = await html2canvas(node, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+      // calculate image size to fit A4
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgWidth = pageWidth - 40; // margin
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      pdf.addImage(imgData, 'PNG', 20, 20, imgWidth, imgHeight);
+      pdf.save((invoiceNoInput.value || 'invoice') + '.pdf');
+    }
+
+    function exportAsCSV(){
+      const data = getCurrentData();
+      const rows = [ ['Description','Qty','Price','Total'] ];
+      data.items.forEach(it => rows.push([it.desc, it.qty, it.price, (it.qty*it.price).toFixed(2)]));
+      const csv = rows.map(r => r.map(c => '"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (invoiceNoInput.value || 'invoice') + '.csv';
+      a.click();
+    }
+
+    function exportAsXLSX(){
+      const data = getCurrentData();
+      const ws_data = [ ['Invoice', data.invoiceNo || ''], ['From', data.from||''], ['To', data.to||''], ['Date', data.date||''], [] , ['Description','Qty','Price','Total'] ];
+      data.items.forEach(it => ws_data.push([it.desc, it.qty, it.price, it.qty*it.price]));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(ws_data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
+      XLSX.writeFile(wb, (invoiceNoInput.value || 'invoice') + '.xlsx');
+    }
+
+    // theme toggle
+    const themeToggle = $('themeToggle');
+    function setThemeDark(dark){
+      if(dark) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme_dark', dark? '1' : '0');
+    }
+    themeToggle.addEventListener('click', ()=>{
+      const isDark = document.documentElement.classList.contains('dark');
+      setThemeDark(!isDark);
+    });
+
+    // helper escape for value injection
+    function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    // Initialize app
+    (function init(){
+      // Load theme
+      const theme = localStorage.getItem('theme_dark');
+      setThemeDark(theme === '1');
+
+      // load saved list
+      if(!localStorage.getItem(STORAGE_KEY)) localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+      renderSavedList();
+
+      // Load draft or empty
+      const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      if(all[0] && all[0].meta && all[0].meta.draft){
+        loadData(all[0].payload);
+      } else {
+        // default one row
+        createRow();
+        updateTotals();
+      }
+
+      // date defaults
+      const today = new Date().toISOString().slice(0,10);
+      if(!dateInput.value) dateInput.value = today;
+
+      // events
+      addRowBtn.addEventListener('click', ()=>{ createRow(); updateTotals(); });
+      $('clearAll').addEventListener('click', ()=>{ if(confirm('Clear all items?')){ itemsBody.innerHTML=''; createRow(); updateTotals(); } });
+      saveBtn.addEventListener('click', saveInvoice);
+      exportPNG.addEventListener('click', exportAsPNG);
+      exportPDF.addEventListener('click', exportAsPDF);
+      exportCSV.addEventListener('click', exportAsCSV);
+      exportXLSX.addEventListener('click', exportAsXLSX);
+
+      // autosave on change
+      [fromInput,toInput,invoiceNoInput,dateInput,dueDateInput].forEach(el=> el.addEventListener('input', autosave));
+
+    })();
+
+  </script>
+</body>
+</html>
